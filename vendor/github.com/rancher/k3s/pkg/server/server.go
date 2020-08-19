@@ -60,8 +60,6 @@ func StartServer(ctx context.Context, config *Config) error {
 		return errors.Wrap(err, "starting tls server")
 	}
 
-	config.StupidHook(config.ControlConfig)
-
 	ip := net2.ParseIP(config.ControlConfig.BindAddress)
 	if ip == nil {
 		hostIP, err := net.ChooseHostInterface()
@@ -110,7 +108,6 @@ func startWrangler(ctx context.Context, config *Config) error {
 func runControllers(ctx context.Context, config *Config) error {
 	controlConfig := &config.ControlConfig
 
-	// use this KubeConfigAdmin variable
 	sc, err := newContext(ctx, controlConfig.Runtime.KubeConfigAdmin)
 	if err != nil {
 		return err

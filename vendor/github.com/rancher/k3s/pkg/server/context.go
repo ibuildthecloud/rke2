@@ -33,7 +33,6 @@ func (c *Context) Start(ctx context.Context) error {
 }
 
 func newContext(ctx context.Context, cfg string) (*Context, error) {
-	// build client like this
 	restConfig, err := clientcmd.BuildConfigFromFlags("", cfg)
 	if err != nil {
 		return nil, err

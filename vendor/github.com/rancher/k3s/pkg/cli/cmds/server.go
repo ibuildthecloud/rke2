@@ -54,7 +54,6 @@ type Server struct {
 	ClusterInit              bool
 	ClusterReset             bool
 	EncryptSecrets           bool
-	StupidHook func(interface{})
 }
 
 var ServerConfig Server

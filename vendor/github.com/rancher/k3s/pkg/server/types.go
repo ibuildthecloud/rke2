@@ -10,5 +10,4 @@ type Config struct {
 	ControlConfig    config.Control
 	Rootless         bool
 	SupervisorPort   int
-	StupidHook func(interface{})
 }

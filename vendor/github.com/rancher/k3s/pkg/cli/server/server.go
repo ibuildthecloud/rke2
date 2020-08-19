@@ -64,7 +64,6 @@ func run(app *cli.Context, cfg *cmds.Server) error {
 	}
 
 	serverConfig := server.Config{}
-	serverConfig.StupidHook = cfg.StupidHook
 	serverConfig.DisableAgent = cfg.DisableAgent
 	serverConfig.ControlConfig.Token = cfg.Token
 	serverConfig.ControlConfig.AgentToken = cfg.AgentToken
