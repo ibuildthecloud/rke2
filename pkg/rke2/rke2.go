@@ -160,15 +160,16 @@ func setup(clx *cli.Context, cfg Config) error {
 	}
 
 	sp := podexecutor.StaticPodConfig{
-		Resolver:        resolver,
-		ImagesDir:       agentImagesDir,
-		ManifestsDir:    agentManifestsDir,
-		CISMode:         isCISMode(clx),
-		CloudProvider:   cpConfig,
-		DataDir:         dataDir,
-		AuditPolicyFile: auditPolicyFile,
-		KubeletPath:     cfg.KubeletPath,
-		DisableETCD:     disableETCD,
+		APIServerAvailable: podexecutor.NewWaitAvailable(disableAPIServer),
+		Resolver:           resolver,
+		ImagesDir:          agentImagesDir,
+		ManifestsDir:       agentManifestsDir,
+		CISMode:            isCISMode(clx),
+		CloudProvider:      cpConfig,
+		DataDir:            dataDir,
+		AuditPolicyFile:    auditPolicyFile,
+		KubeletPath:        cfg.KubeletPath,
+		DisableETCD:        disableETCD,
 	}
 	executor.Set(&sp)
 

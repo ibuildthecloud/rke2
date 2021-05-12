@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rancher/k3s/pkg/cli/cmds"
@@ -37,15 +38,16 @@ var (
 )
 
 type StaticPodConfig struct {
-	ManifestsDir    string
-	ImagesDir       string
-	Resolver        *images.Resolver
-	CloudProvider   *CloudProviderConfig
-	CISMode         bool
-	DataDir         string
-	AuditPolicyFile string
-	KubeletPath     string
-	DisableETCD     bool
+	ManifestsDir       string
+	ImagesDir          string
+	Resolver           *images.Resolver
+	CloudProvider      *CloudProviderConfig
+	CISMode            bool
+	DataDir            string
+	AuditPolicyFile    string
+	KubeletPath        string
+	DisableETCD        bool
+	APIServerAvailable *WaitAvailable
 }
 
 type CloudProviderConfig struct {
@@ -57,8 +59,6 @@ type CloudProviderConfig struct {
 func (s *StaticPodConfig) Kubelet(args []string) error {
 	extraArgs := []string{
 		"--volume-plugin-dir=/var/lib/kubelet/volumeplugins",
-		"--file-check-frequency=5s",
-		"--sync-frequency=30s",
 	}
 	if s.CloudProvider != nil {
 		extraArgs = append(extraArgs,
@@ -69,19 +69,47 @@ func (s *StaticPodConfig) Kubelet(args []string) error {
 	args = append(extraArgs, args...)
 	go func() {
 		for {
-			cmd := exec.Command(s.KubeletPath, args...)
+			cmd := exec.Command(s.KubeletPath, s.makeHeadlessIfNeeded(args)...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			addDeathSig(cmd)
 
-			err := cmd.Run()
+			err := cmd.Start()
+			if err == nil {
+				err = s.killAfterAPIServerReady(cmd).Wait()
+			}
 			logrus.Errorf("Kubelet exited: %v", err)
-
 			time.Sleep(5 * time.Second)
 		}
 	}()
 
 	return nil
+}
+
+func (s *StaticPodConfig) killAfterAPIServerReady(cmd *exec.Cmd) *exec.Cmd {
+	if s.APIServerAvailable.IsAvailable() {
+		return cmd
+	}
+	go func() {
+		s.APIServerAvailable.Wait()
+		cmd.Process.Kill()
+	}()
+	return cmd
+}
+
+func (s *StaticPodConfig) makeHeadlessIfNeeded(args []string) (result []string) {
+	if s.APIServerAvailable.IsAvailable() {
+		return args
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--kubeconfig=") ||
+			arg == "--authorization-mode=Webhook" ||
+			arg == "--authentication-token-webhook=true" {
+			continue
+		}
+		result = append(result, arg)
+	}
+	return
 }
 
 // KubeProxy panics if used. KubeProxy for RKE2 is provided by a packaged component (rke2-kube-proxy Helm chart).
@@ -197,6 +225,8 @@ func after(after <-chan struct{}, f func() error) error {
 
 // ControllerManager starts the kube-controller-manager static pod, once the apiserver is available.
 func (s *StaticPodConfig) ControllerManager(apiReady <-chan struct{}, args []string) error {
+	after(apiReady, s.APIServerAvailable.Available)
+
 	image, err := s.Resolver.GetReference(images.KubeControllerManager)
 	if err != nil {
 		return err
@@ -389,4 +419,51 @@ func writeIfNotExists(path string, content []byte) error {
 	defer file.Close()
 	_, err = file.Write(content)
 	return err
+}
+
+type WaitAvailable struct {
+	sync.Mutex
+	wait chan struct{}
+}
+
+func NewWaitAvailable(available bool) *WaitAvailable {
+	if available {
+		return nil
+	}
+	return &WaitAvailable{
+		wait: make(chan struct{}),
+	}
+}
+
+func (a *WaitAvailable) IsAvailable() bool {
+	if a == nil {
+		return true
+	}
+	select {
+	case <-a.wait:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *WaitAvailable) Wait() {
+	if a == nil {
+		return
+	}
+	<-a.wait
+}
+
+func (a *WaitAvailable) Available() error {
+	if a == nil {
+		return nil
+	}
+	a.Lock()
+	defer a.Unlock()
+	select {
+	case <-a.wait:
+	default:
+		close(a.wait)
+	}
+	return nil
 }
